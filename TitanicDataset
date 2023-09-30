@@ -1,0 +1,207 @@
+import os
+import numpy as np
+import pandas as pd
+from pandas import read_csv
+import seaborn as sns
+import warnings
+import matplotlib.pyplot as plt
+import missingno as msno
+from sklearn.model_selection import train_test_split
+from sklearn.compose import ColumnTransformer
+from sklearn.preprocessing import MinMaxScaler, StandardScaler
+from sklearn.linear_model import LogisticRegression
+from sklearn import metrics
+from sklearn.metrics import classification_report
+from xgboost import XGBClassifier
+from sklearn.ensemble import RandomForestClassifier
+#list all files under the input directory
+for dirname, _, filenames in os.walk('/kaggle/input'):
+    for filename in filenames:
+        print(os.path.join(dirname, filename))
+#path for the training set
+data_path = "/kaggle/input/titanic-dataset/Titanic-Dataset.csv"
+data = pd.read_csv(data_path)
+data
+data=data.drop(['Name','Ticket','Cabin','PassengerId'], axis=1)
+print(data.shape)
+print(data.dtypes)
+print(data.info())
+data.describe(include = 'all')
+perc = ((data['Sex'].value_counts())/len(data))*100
+print('percentage of gender:\n',perc)
+# Visualizing the survival of passengers based on their Sex
+'''
+v1 = sns.FacetGrid(data, col='Survived')
+v1.map(plt.hist, 'Sex', alpha=0.5)
+v1.add_legend()
+'''
+#//////////////////////////////////or\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\\
+sns.catplot(data=data , x='Sex', col='Survived', kind='count')
+# Visualizing the survival of passengers based on their age
+v2 = sns.FacetGrid(data, col='Survived')
+v2.map(plt.hist, 'Age', bins=30)
+# Visualizing the survival of passengers based on their Fare
+warnings.filterwarnings("ignore")
+v3 = sns.FacetGrid(data, col='Survived')
+v3.map(plt.hist, 'Fare', alpha=0.5, bins=30)
+v3.add_legend()
+# Visualizing the survival of passengers based on their Age and Pclass
+v4 = sns.FacetGrid(data, col='Survived', row='Pclass')
+v4.map(plt.hist, 'Age', bins=30)
+# Visualizing the survival of passengers based on their Sex, Fare, Embarked
+warnings.filterwarnings("ignore")
+v5 = sns.FacetGrid(data, col='Survived', row='Embarked')
+v5.map(sns.barplot, 'Sex', 'Fare', alpha=0.5, ci=None)
+v5.add_legend()
+# Checking duplicate rows
+print(data.duplicated().sum())
+data[data.duplicated()]
+# dropping duplicate rows
+data = data.drop_duplicates()
+data
+# Checking missing value
+print("missing values in columns: \n",data.isna().sum())
+msno.matrix(data)
+# data["Age"] = data["Age"].fillna(value=data["Age"].mean())
+# or
+# compute mean and std of `Age`
+Age_mean = data['Age'].mean()
+Age_std = data['Age'].std()
+# number of NaN in `Age` column
+num_na = data['Age'].isna().sum()
+# generate `num_na` samples from N(age_mean, age_std**2) distribution
+rand_vals = Age_mean + Age_std * np.random.randn(num_na)
+# replace missing values with `rand_vals`
+data.loc[data['Age'].isna(), 'Age'] = rand_vals
+# filling missing values in Embarked col
+data['Embarked']=data['Embarked'].fillna(data['Embarked'].mode()[0])
+# Checking missing value (Again)
+msno.matrix(data)
+# Checking distplot of Age col
+'''
+plt.figure(figsize=(15, 5))
+plt.title("Age", fontsize="small")
+sns.distplot(data['Age'])
+fig = plt.gcf()
+'''
+#data.Pclass=data.Pclass.map({1:'first class', 2:'second class', 3:'third class'})
+data = pd.get_dummies(data, drop_first=True)
+X = data.drop(["Survived"], axis = 1)
+y = data.loc[:, "Survived"].values
+# Split Data into training and testing
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.25, random_state=0)
+'''
+ct = ColumnTransformer([('X_train', MinMaxScaler(), ['Age','Fare'])], remainder ='passthrough')
+X_train = ct.fit_transform(X_train)
+X_test = ct.transform(X_test)
+'''
+# ////////////// or \\\\\\\\\\\\\\\
+MinMax = MinMaxScaler()
+X_train = MinMax.fit_transform(X_train)
+X_test = MinMax.transform(X_test)
+# Logistic Regression Classifier
+LogReg = LogisticRegression(random_state=42, solver="liblinear")
+LogReg.fit(X_train, y_train)
+# Predict
+y_pred = LogReg.predict(X_test)
+confusion_matrix = metrics.confusion_matrix(y_test, y_pred, labels=LogReg.classes_)
+# print(confusion_matrix)
+cm_display = metrics.ConfusionMatrixDisplay(confusion_matrix = confusion_matrix, display_labels = [False, True])
+cm_display.plot()
+plt.show()
+def plot_confusion_matrix(cm, classes=None, title='Confusion matrix_Norm'):
+    """Plots a confusion matrix."""
+    if classes is not None:
+        sns.heatmap(cm, cmap="YlGnBu", xticklabels=classes, yticklabels=classes, vmin=0., vmax=1., annot=True, annot_kws={'size':50})
+    else:
+        sns.heatmap(cm, vmin=0., vmax=1.)
+    plt.title(title)
+    plt.ylabel('True label')
+    plt.xlabel('Predicted label')
+confusion_matrix_norm = confusion_matrix / confusion_matrix.sum(axis=1).reshape(-1,1)
+plot_confusion_matrix(confusion_matrix_norm, classes = LogReg.classes_, title='Confusion matrix_Norm')
+#Accuracy
+accuracy = metrics.accuracy_score(y_test, y_pred)
+print("Accuracy score:",accuracy)
+precision = metrics.precision_score(y_test, y_pred)
+print("Precision score:",precision)
+recall = metrics.recall_score(y_test, y_pred)
+print("Recall score:",recall)
+f1_score = metrics.f1_score(y_test, y_pred)
+print("f1_score:",f1_score)
+# Accuracy on Train
+print("The Training Accuracy is: ", LogReg.score(X_train, y_train))
+# Accuracy on Test
+print("The Testing Accuracy is: ", LogReg.score(X_test, y_test))
+# Classification Report
+print(classification_report(y_test, y_pred))
+# Accuracy on Train
+print("The Training Accuracy is: ", LogReg.score(X_train, y_train))
+C=10
+L1_logistic = LogisticRegression(random_state=42, solver="liblinear", C=C, penalty="l1")
+L1_logistic.fit(X_train, y_train)
+# Predict
+y_pred = L1_logistic.predict(X_test)
+# Accuracy on Train
+print("The Training Accuracy is: ", L1_logistic.score(X_train, y_train))
+# Accuracy on Test
+print("The Testing Accuracy is: ", L1_logistic.score(X_test, y_test))
+# Classification Report
+print(classification_report(y_test, y_pred))
+C=100
+L2_logistic = LogisticRegression(random_state=42, solver="liblinear", C=C, penalty="l2")
+L2_logistic.fit(X_train, y_train)
+# Predict
+y_pred = L2_logistic.predict(X_test)
+# Accuracy on Train
+print("The Training Accuracy is: ", L2_logistic.score(X_train, y_train))
+# Accuracy on Test
+print("The Testing Accuracy is: ", L2_logistic.score(X_test, y_test))
+# Classification Report
+print(classification_report(y_test, y_pred))
+XGB = XGBClassifier()
+# fit the model
+XGB.fit(X_train, y_train)
+# Make Prediction
+y_pred = XGB.predict(X_test)
+# Accuracy on Train
+print("The Training Accuracy is: ", XGB.score(X_train, y_train))
+# Accuracy on Test
+print("The Testing Accuracy is: ", XGB.score(X_test, y_test))
+# Classification Report
+print(classification_report(y_test, y_pred))
+RF = RandomForestClassifier(random_state=42,max_depth=5)
+# fit the model
+RF.fit(X_train, y_train)
+# Make Prediction
+y_pred = RF.predict(X_test)
+# Accuracy on Train
+print("The Training Accuracy is: ", RF.score(X_train, y_train))
+# Accuracy on Test
+print("The Testing Accuracy is: ", RF.score(X_test, y_test))
+# Classification Report
+print(classification_report(y_test, y_pred))
+from sklearn.metrics import accuracy_score
+C = 10
+# Create different classifiers.
+classifiers = {
+    "Logistic Regression" : LogisticRegression(
+      random_state=42, solver="liblinear", max_iter=10000),
+    "L1 logistic": LogisticRegression(
+        C=C, penalty="l1", random_state=42, solver="liblinear", max_iter=10000
+    ),
+    "L2 logistic": LogisticRegression(
+        C=C, penalty="l2", random_state=42, solver="liblinear", max_iter=10000
+    ),
+    "Xgboost Classification ": XGBClassifier(
+       random_state=42
+    ),
+    "Random Forest Classification ": RandomForestClassifier(
+       random_state=42, max_depth=5
+    )
+}
+n_classifiers = len(classifiers)
+for index, (name, classifier) in enumerate(classifiers.items()):
+    classifier.fit(X_train, y_train)
+    y_pred = classifier.predict(X_test)
+    print("classifire={}, The Training Accuracy={:.4f}, The Testing Accuracy={:.4f}, \n".format(name, classifier.score(X_train, y_train, sample_weight=None), classifier.score(X_test, y_test)))
