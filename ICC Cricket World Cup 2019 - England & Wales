@@ -2,29 +2,20 @@
 library(ggplot2)
 library(lubridate)
 library(ggthemes)
-
 # This R environment comes with all of CRAN and many other helpful packages preinstalled.
 # You can see which packages are installed by checking out the kaggle/rstats docker image: 
 # https://github.com/kaggle/docker-rstats
-
 library(tidyverse) # metapackage with lots of helpful functions
-
 ## Running code
-
 # In a notebook, you can run a single code cell by clicking in the cell and then hitting 
 # the blue arrow to the left, or by clicking in the cell and pressing Shift+Enter. In a script, 
 # you can run code by highlighting the code you want to run and then clicking the blue arrow
 # at the bottom of this window.
-
 ## Reading in files
-
 # You can access files from datasets you've added to this kernel in the "../input/" directory.
 # You can see the files added to this kernel by running the code below. 
-
 list.files(path = "../input")
-
 ## Saving data
-
 # If you save any files or images, these will be put in the "output" directory. You 
 # can see the output directory by committing and running your kernel (using the 
 # Commit & Run button) and then checking out the compiled version of your kernel.
@@ -38,11 +29,9 @@ players <- players %>%
     mutate(PlayerName = Player, Player = str_replace(Player, '(\\(.*)', "") %>% str_trim())
 # Peek at data on grounds
 head(ground_data)
-
 # Filter out grounds in England
 eng_grounds <- ground_data %>%
     filter(str_detect(Ground, 'England'))
-
 eng_grounds
 # Extract stadium names to use in filtering
 wc_ground_names <- eng_grounds$Ground %>%
@@ -50,36 +39,27 @@ wc_ground_names <- eng_grounds$Ground %>%
     str_split(',', simplify=TRUE) %>%   
     as.data.frame(stringsAsFactors = FALSE) %>% 
     rename('Stadium' = 'V1', 'Ground' = 'V2')
-
 # Changing London ground names to match the dataset
 wc_ground_names$Ground[wc_ground_names$Stadium == "Lord's"] <- "Lord's"
 wc_ground_names$Ground[wc_ground_names$Stadium == "Kennington Oval"] <- "The Oval"
-
 wc_ground_names
 # Peek at ODI data
 head(odi_scores)
-
 # Filtering out matches that were played in Englad
-
 # Dropping East London to resolve str_detect problems (East London is a stadium in South Africa)
 wc_prev_matches <- odi_scores %>%
     filter(Ground != 'East London') %>% 
     filter(str_detect(Ground, paste(str_trim(wc_ground_names$Ground), collapse='|')))
-
 wc_prev_matches$Country <- wc_prev_matches$Country %>% recode('Newzealad' = 'NewZealand')
-
 wc_prev_matches$Score <- wc_prev_matches$Score %>% str_replace('(/.)', '')
-
 head(wc_prev_matches)
 # Number of matches played by teams in England
-
 options(repr.plot.width=11.5, repr.plot.height=5.5)
 no_of_matches <- wc_prev_matches %>% 
     mutate(Match_ID = str_replace(Match_ID, 'ODI # ', '')) %>% 
     group_by(Country) %>% count(Match_ID) %>% 
     distinct() %>% 
     count(Country)
-
 ggplot(no_of_matches, aes(x=reorder(Country, -n), y=n, fill=Country, label=n)) + 
     theme_economist() + 
     scale_fill_economist() +
@@ -91,7 +71,6 @@ ggplot(no_of_matches, aes(x=reorder(Country, -n), y=n, fill=Country, label=n)) +
 # Win percentage by country
 result_by_country <- wc_prev_matches %>% group_by(Country, Result) %>% summarize(n = n()) %>% inner_join(no_of_matches, by = "Country") %>% mutate(perc = n.x/n.y * 100)
 result_by_country$Result <- recode(result_by_country$Result, '-'='Unknown', 'lost' = 'Lost', 'n/r' = 'No Result', 'won'='Won', 'tied'='Tie')
-
 ggplot(result_by_country, aes(x=reorder(Country, -n.x), y=perc, fill=Result)) + 
     geom_bar(stat='identity', position = position_dodge2(width=0.5, preserve = 'single')) +
     theme_economist() +
@@ -102,8 +81,6 @@ ggplot(result_by_country, aes(x=reorder(Country, -n.x), y=perc, fill=Result)) +
 head_to_head <- function(t1, t2){
     t1_t2 <- wc_prev_matches %>% filter(str_detect(Country, paste(t1, '|', t2, sep='')), str_detect(Opposition,paste(t1, '|', t2, sep=''))) %>% group_by(Result, Country)
     number_matches <- nrow(t1_t2)
-
-
     ggplot(filter(t1_t2, Result == 'won'), aes(x=Country, fill=Country)) + geom_bar(position='dodge', width = 0.3) + geom_text(stat='count', aes(label=..count..), nudge_y = 0.2) + 
         theme_economist() +
         scale_fill_economist() +
@@ -111,17 +88,13 @@ head_to_head <- function(t1, t2){
         theme(plot.margin = margin(5, 10, 10, 5), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0))) + 
         guides(fill=FALSE)
 }
-
 # Australia vs. England
 head_to_head('England', 'Australia')
-
 # India vs. England
 head_to_head('England', 'India')
 # Winnings by Innings
-
 win_by_inn <- wc_prev_matches %>% group_by(Inns, Result) %>% count() %>% filter(Result == 'won')
 win_by_inn <- win_by_inn %>% mutate(perc = n/sum(win_by_inn$n) * 100)
-
 ggplot(win_by_inn, aes(x=Inns, y=perc, fill=as.factor(Inns))) + geom_bar(width=0.3, stat='identity') + 
     theme_economist() + 
     scale_fill_economist() +
@@ -131,7 +104,6 @@ ggplot(win_by_inn, aes(x=Inns, y=perc, fill=as.factor(Inns))) + geom_bar(width=0
     theme(plot.margin = margin(5, 10, 10, 5), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)))
 # Innings and pitches
 inn_by_pitch <- wc_prev_matches %>% group_by(Ground, Inns, Result) %>% count() %>% filter(Inns != 0, Result=='won')
-
 ggplot(inn_by_pitch, aes(x=Ground, y=n, fill=as.factor(Inns))) + geom_bar(stat='identity', position = position_dodge2(width=0.5, preserve = 'single')) +
     theme_economist() +
     scale_fill_economist(labels=c('First', 'Second')) + 
@@ -140,7 +112,6 @@ ggplot(inn_by_pitch, aes(x=Ground, y=n, fill=as.factor(Inns))) + geom_bar(stat='
           axis.text.x = element_text(angle = -30))
 # Average scores
 scores_by_stadium <- wc_prev_matches %>% filter(Score != 'DNB') %>% group_by(Ground) %>% summarise(mean = mean(as.numeric(Score)))
-
 ggplot(scores_by_stadium, aes(x=Ground, fill=Ground, y=mean, label=sprintf("%.0f", mean))) + geom_bar(width=0.5, stat='identity') + geom_text(nudge_y=15, size=4) + 
     guides(fill=FALSE) +
     theme_economist() +
@@ -150,10 +121,8 @@ ggplot(scores_by_stadium, aes(x=Ground, fill=Ground, y=mean, label=sprintf("%.0f
           axis.text.x = element_text(angle = -30))
 # Win by Stadium
 win_by_stadium <- wc_prev_matches %>% group_by(Ground, Country) %>% count()
-
 win_by_stadium <- win_by_stadium %>% inner_join(wc_prev_matches %>% filter(Result == 'won') %>% group_by(Ground, Country) %>% count(), by=c('Ground', 'Country'), name=c('total', 'wins')) %>%
     rename('Total' = 'n.x', 'Wins' = 'n.y') %>% mutate(perc = Wins/Total * 100)
-
 ggplot(win_by_stadium, aes(x=Ground, y=perc, fill=Country, label=sprintf('%.2f', perc))) + geom_bar(position = position_dodge2(width=0.5, preserve = 'single'), stat='identity') +
     theme_economist(dkpanel = TRUE) + 
     scale_fill_stata() +
@@ -186,8 +155,7 @@ england_batting <- batsman %>%
     mutate_at(c('Runs', 'BF', '4s', '6s'), as.integer) %>% mutate(SR = as.double(SR), `Start Date` = lubridate::dmy(`Start Date`)) %>%
     mutate(out_or_not = ifelse(str_detect(string = Bat1, pattern = '\\*'), 0, 1))
 # Plot a batsman's performance
-batsman_performance <- function(player) { 
-    
+batsman_performance <- function(player) {     
     d <- england_batting %>% filter(Batsman == player) %>% mutate(out_or_not = as.character(out_or_not))
     ggplot(d, aes(x=Ground)) + 
     geom_bar(aes(y=Runs, fill=out_or_not), stat='identity', position = position_dodge2(preserve = 'single')) +
@@ -197,13 +165,11 @@ batsman_performance <- function(player) {
     theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)), 
           axis.text.x = element_text(angle = -30))
 }
-
 # Joe Root
 batsman_performance('Joe Root')
 # Virat Kohli
 batsman_performance('Virat Kohli')
 # Average Runs and Strike Rate by batsman
-
 batsman_avgs <- england_batting %>% group_by(Batsman) %>%
     summarise_at(c('Runs', 'BF', '4s', '6s', 'out_or_not'), sum) %>%
     mutate(bat_avg = Runs/out_or_not, str_rate = Runs/BF * 100) %>% 
@@ -243,7 +209,6 @@ overs_to_balls <- function(overs){
     split = as.integer(str_split(overs, '\\.')[[1]])
     return(split[1] * 6 + split[2])
 }
-
 england_bowling <- bowler %>%
     filter(Overs != '-') %>%
     filter(Ground != 'East London') %>% 
@@ -253,7 +218,6 @@ england_bowling <- bowler %>%
     mutate_at(c('Mdns', 'Runs', 'Wkts'), as.integer) %>%
     mutate(Econ = as.double(Econ), Ave = as.double(str_replace(Ave, '-', '0')), SR = as.double(str_replace(SR, '-', '0')), `Start Date` = lubridate::dmy(`Start Date`)) %>%
     ungroup()
-
 head(england_bowling)
 # How has a bowler performed in England
 bowler_plot <- function(player) {
@@ -266,10 +230,8 @@ bowler_plot <- function(player) {
         labs(x='Ground', y='Economy Rate', fill='Year', title=paste("Economy Rate of", player), subtitle='In England, from 2013') +
         theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)))       
 }
-
 # Pat Cummins
 bowler_plot('Pat Cummins')
-
 # Joe Root
 bowler_plot('Joe Root')
 # Aggregate bowler statistics
@@ -279,7 +241,6 @@ overall_bowler <- england_bowling %>%
     filter(balls >= 60, wkts > 0) %>% # Filtering constant bowlers
     mutate(econ = runs*6/balls, avg = runs/wkts, sr=balls/wkts) %>%
     left_join(players, by=c('Bowler' = 'Player')) %>% select(-ID, -PlayerName)
-
 head(overall_bowler)
 # Top 10 bowlers by economy rate
 ggplot(top_n(overall_bowler, 10, -econ), aes(x=reorder(Bowler, -econ), y=econ, fill=Country, label=sprintf("%.2f", econ))) + 
@@ -333,7 +294,6 @@ ggplot(top_n(overall_bowler %>% filter(Country != 'England'), 10, wkts), aes(x=r
           legend.position='right')
 # Countries with best bowlers
 country_bowler <- overall_bowler %>% group_by(Country) %>% filter(balls > 150, avg < 40, sr < 40, econ < 8) %>% count()
-
 ggplot(country_bowler, aes(x=Country, y=n, fill=Country)) + geom_bar(stat='identity') +
     theme_economist() +
     scale_fill_economist() + 
