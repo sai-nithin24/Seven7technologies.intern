@@ -28,3 +28,320 @@ list.files(path = "../input")
 # If you save any files or images, these will be put in the "output" directory. You 
 # can see the output directory by committing and running your kernel (using the 
 # Commit & Run button) and then checking out the compiled version of your kernel.
+# Reading in data
+ground_data <- read_csv('../input/Ground_Averages.csv')
+odi_scores <- read_csv('../input/ODI_Match_Totals.csv')
+players <- read_csv('../input/WC_players.csv')
+# Tidy players dataset to facilitate joins
+head(players)
+players <- players %>% 
+    mutate(PlayerName = Player, Player = str_replace(Player, '(\\(.*)', "") %>% str_trim())
+# Peek at data on grounds
+head(ground_data)
+
+# Filter out grounds in England
+eng_grounds <- ground_data %>%
+    filter(str_detect(Ground, 'England'))
+
+eng_grounds
+# Extract stadium names to use in filtering
+wc_ground_names <- eng_grounds$Ground %>%
+    str_remove(' - England') %>%
+    str_split(',', simplify=TRUE) %>%   
+    as.data.frame(stringsAsFactors = FALSE) %>% 
+    rename('Stadium' = 'V1', 'Ground' = 'V2')
+
+# Changing London ground names to match the dataset
+wc_ground_names$Ground[wc_ground_names$Stadium == "Lord's"] <- "Lord's"
+wc_ground_names$Ground[wc_ground_names$Stadium == "Kennington Oval"] <- "The Oval"
+
+wc_ground_names
+# Peek at ODI data
+head(odi_scores)
+
+# Filtering out matches that were played in Englad
+
+# Dropping East London to resolve str_detect problems (East London is a stadium in South Africa)
+wc_prev_matches <- odi_scores %>%
+    filter(Ground != 'East London') %>% 
+    filter(str_detect(Ground, paste(str_trim(wc_ground_names$Ground), collapse='|')))
+
+wc_prev_matches$Country <- wc_prev_matches$Country %>% recode('Newzealad' = 'NewZealand')
+
+wc_prev_matches$Score <- wc_prev_matches$Score %>% str_replace('(/.)', '')
+
+head(wc_prev_matches)
+# Number of matches played by teams in England
+
+options(repr.plot.width=11.5, repr.plot.height=5.5)
+no_of_matches <- wc_prev_matches %>% 
+    mutate(Match_ID = str_replace(Match_ID, 'ODI # ', '')) %>% 
+    group_by(Country) %>% count(Match_ID) %>% 
+    distinct() %>% 
+    count(Country)
+
+ggplot(no_of_matches, aes(x=reorder(Country, -n), y=n, fill=Country, label=n)) + 
+    theme_economist() + 
+    scale_fill_economist() +
+    geom_bar(stat='identity') +
+    labs(x='Country', y='Number of matches', title='Number of matches played by each country', subtitle = 'In England, from 2013') + 
+    guides(fill=FALSE) + 
+    geom_text(nudge_y = 2) +
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)))
+# Win percentage by country
+result_by_country <- wc_prev_matches %>% group_by(Country, Result) %>% summarize(n = n()) %>% inner_join(no_of_matches, by = "Country") %>% mutate(perc = n.x/n.y * 100)
+result_by_country$Result <- recode(result_by_country$Result, '-'='Unknown', 'lost' = 'Lost', 'n/r' = 'No Result', 'won'='Won', 'tied'='Tie')
+
+ggplot(result_by_country, aes(x=reorder(Country, -n.x), y=perc, fill=Result)) + 
+    geom_bar(stat='identity', position = position_dodge2(width=0.5, preserve = 'single')) +
+    theme_economist() +
+    scale_fill_brewer(type = 'qual', palette = 'Set1') +
+    labs(x='Country', y='Percentage', title='Percentage of outcomes by country', subtitle = 'In England, from 2013') +
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)))
+# Function to plot two teams
+head_to_head <- function(t1, t2){
+    t1_t2 <- wc_prev_matches %>% filter(str_detect(Country, paste(t1, '|', t2, sep='')), str_detect(Opposition,paste(t1, '|', t2, sep=''))) %>% group_by(Result, Country)
+    number_matches <- nrow(t1_t2)
+
+
+    ggplot(filter(t1_t2, Result == 'won'), aes(x=Country, fill=Country)) + geom_bar(position='dodge', width = 0.3) + geom_text(stat='count', aes(label=..count..), nudge_y = 0.2) + 
+        theme_economist() +
+        scale_fill_economist() +
+        labs(x='Country', y='Wins', title=paste(t1, 'vs.', t2), subtitle = 'Head-to-head, ODIs since 2013 in England') +
+        theme(plot.margin = margin(5, 10, 10, 5), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0))) + 
+        guides(fill=FALSE)
+}
+
+# Australia vs. England
+head_to_head('England', 'Australia')
+
+# India vs. England
+head_to_head('England', 'India')
+# Winnings by Innings
+
+win_by_inn <- wc_prev_matches %>% group_by(Inns, Result) %>% count() %>% filter(Result == 'won')
+win_by_inn <- win_by_inn %>% mutate(perc = n/sum(win_by_inn$n) * 100)
+
+ggplot(win_by_inn, aes(x=Inns, y=perc, fill=as.factor(Inns))) + geom_bar(width=0.3, stat='identity') + 
+    theme_economist() + 
+    scale_fill_economist() +
+    guides(fill=FALSE) +
+    scale_x_discrete(limits=c(1,2), labels=c('1'='First', '2'='Second')) + 
+    labs(x='Innings', y='Percentage', title='Wins by Innings', subtitle='% of matches won in both innings') +
+    theme(plot.margin = margin(5, 10, 10, 5), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)))
+# Innings and pitches
+inn_by_pitch <- wc_prev_matches %>% group_by(Ground, Inns, Result) %>% count() %>% filter(Inns != 0, Result=='won')
+
+ggplot(inn_by_pitch, aes(x=Ground, y=n, fill=as.factor(Inns))) + geom_bar(stat='identity', position = position_dodge2(width=0.5, preserve = 'single')) +
+    theme_economist() +
+    scale_fill_economist(labels=c('First', 'Second')) + 
+    labs(x='Ground', y='Wins', fill='Innings', title='Winnings by pitch', subtitle='ODIs, England, from 2013') +
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)), 
+          axis.text.x = element_text(angle = -30))
+# Average scores
+scores_by_stadium <- wc_prev_matches %>% filter(Score != 'DNB') %>% group_by(Ground) %>% summarise(mean = mean(as.numeric(Score)))
+
+ggplot(scores_by_stadium, aes(x=Ground, fill=Ground, y=mean, label=sprintf("%.0f", mean))) + geom_bar(width=0.5, stat='identity') + geom_text(nudge_y=15, size=4) + 
+    guides(fill=FALSE) +
+    theme_economist() +
+    scale_fill_stata() +
+    labs(x='Ground', y='Average Score', title='Average score by pitch', subtitle='ODIs, England, from 2013') +
+    theme(plot.margin = margin(25, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)), 
+          axis.text.x = element_text(angle = -30))
+# Win by Stadium
+win_by_stadium <- wc_prev_matches %>% group_by(Ground, Country) %>% count()
+
+win_by_stadium <- win_by_stadium %>% inner_join(wc_prev_matches %>% filter(Result == 'won') %>% group_by(Ground, Country) %>% count(), by=c('Ground', 'Country'), name=c('total', 'wins')) %>%
+    rename('Total' = 'n.x', 'Wins' = 'n.y') %>% mutate(perc = Wins/Total * 100)
+
+ggplot(win_by_stadium, aes(x=Ground, y=perc, fill=Country, label=sprintf('%.2f', perc))) + geom_bar(position = position_dodge2(width=0.5, preserve = 'single'), stat='identity') +
+    theme_economist(dkpanel = TRUE) + 
+    scale_fill_stata() +
+    labs(x='Ground', y='Percentage', fill='Country', title='Wins by Pitch', subtitle='% of matches won by each country at different grounds') +
+    theme(plot.margin = margin(25, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)), 
+          axis.text.x = element_text(angle = -30), legend.position='right')
+# Batsman Analysis
+batsman <- read_csv('../input/Batsman_Data.csv') %>% inner_join(players, by=c('Batsman' = 'Player', 'Player_ID' = 'ID'))
+Warning message:
+“Missing column names filled in: 'X1' [1]”Parsed with column specification:
+cols(
+  X1 = col_double(),
+  Bat1 = col_character(),
+  Runs = col_character(),
+  BF = col_character(),
+  SR = col_character(),
+  `4s` = col_character(),
+  `6s` = col_character(),
+  Opposition = col_character(),
+  Ground = col_character(),
+  `Start Date` = col_character(),
+  Match_ID = col_character(),
+  Batsman = col_character(),
+  Player_ID = col_double()
+)
+# Drop DNB / TDNB, add out or not out flag and filter England grounds
+england_batting <- batsman %>%
+    filter(Bat1 != 'DNB', Bat1 != 'TDNB', SR != '-') %>%
+    filter(Ground != 'East London') %>% filter(str_detect(Ground, paste(str_trim(wc_ground_names$Ground), collapse='|'))) %>%
+    mutate_at(c('Runs', 'BF', '4s', '6s'), as.integer) %>% mutate(SR = as.double(SR), `Start Date` = lubridate::dmy(`Start Date`)) %>%
+    mutate(out_or_not = ifelse(str_detect(string = Bat1, pattern = '\\*'), 0, 1))
+# Plot a batsman's performance
+batsman_performance <- function(player) { 
+    
+    d <- england_batting %>% filter(Batsman == player) %>% mutate(out_or_not = as.character(out_or_not))
+    ggplot(d, aes(x=Ground)) + 
+    geom_bar(aes(y=Runs, fill=out_or_not), stat='identity', position = position_dodge2(preserve = 'single')) +
+    theme_economist() + 
+    scale_fill_economist(labels=c('Not Out', 'Out')) +
+    labs(x='Ground', y='Runs', fill='', title=paste('Runs scored by', player), subtitle='In England, from 2013') +
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)), 
+          axis.text.x = element_text(angle = -30))
+}
+
+# Joe Root
+batsman_performance('Joe Root')
+# Virat Kohli
+batsman_performance('Virat Kohli')
+# Average Runs and Strike Rate by batsman
+
+batsman_avgs <- england_batting %>% group_by(Batsman) %>%
+    summarise_at(c('Runs', 'BF', '4s', '6s', 'out_or_not'), sum) %>%
+    mutate(bat_avg = Runs/out_or_not, str_rate = Runs/BF * 100) %>% 
+    filter(out_or_not > 0) %>% # Filtering players
+    inner_join(players, by=c("Batsman" = "Player"))  # Add country
+# Top 10 batsman by batting averages
+ggplot(top_n(batsman_avgs, 10, bat_avg), aes(x=reorder(Batsman, bat_avg), y=bat_avg, fill=Country, label=sprintf('%.2f', bat_avg))) + geom_bar(stat='identity') + coord_flip() +
+    geom_text(nudge_y = 5) +
+    theme_economist(dkpanel = TRUE) + 
+    scale_fill_brewer(type = 'qual', palette = 'Set2') +
+    labs(y='Batting Average', x='Batsman', title='Top 10 Batsman by Batting Average', subtitle='In England, from 2013') + 
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)),
+             legend.position='right')
+# Top 10 batsman by str_rate
+ggplot(top_n(batsman_avgs %>% filter(bat_avg >= 40), 10, str_rate), aes(x=reorder(Batsman, str_rate), y=str_rate, fill=Country, label=sprintf('%.2f', str_rate))) + 
+    geom_bar(stat='identity') + coord_flip() +
+    geom_text(nudge_y = 5) +
+    theme_economist(dkpanel = TRUE) + 
+    scale_fill_brewer(type = 'qual', palette = 'Set2') +
+    labs(y='Strike Rate', x='Batsman', title='Top 10 Batsman by Strike Rate', subtitle='In England, from 2013') + 
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)),
+             legend.position='right')
+# Countries with highest number of good batsmen, based on batting average / strike_rate
+high_bat_country <- batsman_avgs %>% group_by(Country) %>% filter(bat_avg >= 40 | str_rate >= 120)
+ggplot(high_bat_country %>% count(), aes(x=Country, y=n, fill=Country, label=n)) + geom_bar(stat='identity') + geom_text(nudge_y = 0.2) + 
+    theme_economist() + 
+    scale_fill_economist() +
+    labs(x='Country', y='Number of hard hitters', title='Number of hard hitters by country', subtitle='Players having a batting average of 40+ / strike rate of 120+') +
+    guides(fill=FALSE) +
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)))
+# Who are these players?
+high_bat_country %>% select(Country, Batsman) %>% arrange(Country)
+# Bowling Analysis
+bowler <- read_csv('../input/Bowler_data.csv')
+# Drop zero overs, add balls bowled, filter England grounds, correct variable types and tidy dataset
+overs_to_balls <- function(overs){
+    split = as.integer(str_split(overs, '\\.')[[1]])
+    return(split[1] * 6 + split[2])
+}
+
+england_bowling <- bowler %>%
+    filter(Overs != '-') %>%
+    filter(Ground != 'East London') %>% 
+    filter(str_detect(Ground, paste(str_trim(wc_ground_names$Ground), collapse='|'))) %>% 
+    rowwise() %>%
+    mutate(Balls = overs_to_balls(Overs)) %>%
+    mutate_at(c('Mdns', 'Runs', 'Wkts'), as.integer) %>%
+    mutate(Econ = as.double(Econ), Ave = as.double(str_replace(Ave, '-', '0')), SR = as.double(str_replace(SR, '-', '0')), `Start Date` = lubridate::dmy(`Start Date`)) %>%
+    ungroup()
+
+head(england_bowling)
+# How has a bowler performed in England
+bowler_plot <- function(player) {
+        bowler <- england_bowling %>% filter(Bowler == player)
+        ggplot(bowler, aes(x=Ground, y=Econ, label=sprintf('%.2f', Econ), fill=as.factor(year(`Start Date`)))) + 
+        geom_bar(stat='identity', position = position_dodge2(width=1.5, preserve = 'single')) +
+        geom_text(position = position_dodge2(width=1, preserve = 'single'), vjust=-.3, size=3) +
+        theme_economist() +
+        scale_fill_ptol() +
+        labs(x='Ground', y='Economy Rate', fill='Year', title=paste("Economy Rate of", player), subtitle='In England, from 2013') +
+        theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)))       
+}
+
+# Pat Cummins
+bowler_plot('Pat Cummins')
+
+# Joe Root
+bowler_plot('Joe Root')
+# Aggregate bowler statistics
+overall_bowler <- england_bowling %>% 
+    group_by(Bowler) %>% 
+    summarise(runs = sum(Runs), mdns = sum(Mdns), wkts = sum(Wkts), balls = sum(Balls)) %>%
+    filter(balls >= 60, wkts > 0) %>% # Filtering constant bowlers
+    mutate(econ = runs*6/balls, avg = runs/wkts, sr=balls/wkts) %>%
+    left_join(players, by=c('Bowler' = 'Player')) %>% select(-ID, -PlayerName)
+
+head(overall_bowler)
+# Top 10 bowlers by economy rate
+ggplot(top_n(overall_bowler, 10, -econ), aes(x=reorder(Bowler, -econ), y=econ, fill=Country, label=sprintf("%.2f", econ))) + 
+    geom_bar(stat='identity') + 
+    coord_flip() +
+    geom_text(nudge_y = .2) + 
+    theme_economist() +
+    scale_fill_solarized() + 
+    labs(x='Bowler', y='Economy Rate', title='Top 10 bowlers by Economy Rate', subtitle='In England, from 2013') +
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)), 
+        legend.position='right')
+# Top 10 bowlers by average
+ggplot(top_n(overall_bowler, 10, -avg), aes(x=reorder(Bowler, -avg), y=avg, fill=Country, label=sprintf("%.2f", econ))) + 
+    geom_bar(stat='identity') +
+    coord_flip() +
+    geom_text(nudge_y = .2) + 
+    theme_economist() +
+    scale_fill_solarized() + 
+    labs(x='Bowler', y='Average', title='Top 10 bowlers by Average', subtitle='In England, from 2013') +
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)),
+        legend.position='right')
+# Top 10 bowlers by strike rate
+ggplot(top_n(overall_bowler, 10, -sr), aes(x=reorder(Bowler, -sr), y=sr, fill=Country, label=sprintf("%.2f", econ))) + 
+    geom_bar(stat='identity') + 
+    coord_flip() +
+    geom_text(nudge_y = .2) + 
+    theme_economist() +
+    scale_fill_solarized() + 
+    labs(x='Bowler', y='Strike Rate', title='Top 10 bowlers by Strike Rate', subtitle='In England, from 2013') +
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)),
+          legend.position='right')
+# Top 10 highest wicket takers
+ggplot(top_n(overall_bowler, 10, wkts), aes(x=reorder(Bowler, wkts), y=wkts, fill=Country, label=wkts)) + 
+    geom_bar(stat='identity') +
+    coord_flip() +
+    geom_text(nudge_y = 1) + 
+    theme_economist() +
+    scale_fill_solarized() + 
+    labs(x='Bowler', y='Number of wickets', title='Top 10 bowlers by number of wickets', subtitle='In England, from 2013') +
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)),
+          legend.position='right')
+# Excluding England bowlers
+ggplot(top_n(overall_bowler %>% filter(Country != 'England'), 10, wkts), aes(x=reorder(Bowler, wkts), y=wkts, fill=Country, label=wkts)) + 
+    geom_bar(stat='identity') + 
+    coord_flip() +
+    geom_text(nudge_y = .75) + 
+    theme_economist() +
+    scale_fill_solarized() + 
+    labs(x='Bowler', y='Number of wickets', title='Top 10 bowlers by number of wickets', subtitle='In England, from 2013') +
+    theme(plot.margin = margin(10, 20, 20, 10), axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), axis.title.x = element_text(size=11, margin = margin(10,0,0,0)),
+          legend.position='right')
+# Countries with best bowlers
+country_bowler <- overall_bowler %>% group_by(Country) %>% filter(balls > 150, avg < 40, sr < 40, econ < 8) %>% count()
+
+ggplot(country_bowler, aes(x=Country, y=n, fill=Country)) + geom_bar(stat='identity') +
+    theme_economist() +
+    scale_fill_economist() + 
+    guides(fill=FALSE) + 
+    labs(x='Country', 
+         y='Number of good bowlers', 
+         title='Number of good bowlers by Country', 
+         subtitle='Bowlers meeting the criteria: 150+ balls, <40 Average, <40 Strike Rate & <7.5 Economy') +
+    theme(plot.margin = margin(10, 20, 20, 10), 
+          axis.title.y = element_text(size=11, margin = margin(0,10,0,0)), 
+          axis.title.x = element_text(size=11, margin = margin(10,0,0,0)))
